@@ -157,8 +157,8 @@ const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: {
-        refreshToken: undefined, // this removes the field from document
+      $unset: {
+        refreshToken: 1, // this removes the field from document
       },
     },
     {
@@ -183,8 +183,6 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   try {
     const incomingRefreshToken =
       req.cookies.refreshToken || req.body.refreshToken;
-
-    console.log(req.body);
 
     if (!incomingRefreshToken) {
       throw new ApiError(401, "Unauthorized request");
@@ -251,7 +249,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
-    .json(200, req.user, "Current user fetched successfully");
+    .json(new ApiResponse(200, req.user, "Current user fetched successfully"));
 });
 
 const updateAccountDetails = asyncHandler(async (req, res) => {
@@ -335,7 +333,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   const { username } = req.params;
 
   if (!username?.trim()) {
-    throw new ApiError(400, "Username is missing");
+    throw new ApiError(400, "username is missing");
   }
 
   const channel = await User.aggregate([
@@ -346,7 +344,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
     },
     {
       $lookup: {
-        from: "Subscriptions",
+        from: "subscriptions",
         localField: "_id",
         foreignField: "channel",
         as: "subscribers",
@@ -354,7 +352,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
     },
     {
       $lookup: {
-        from: "Subscriptions",
+        from: "subscriptions",
         localField: "_id",
         foreignField: "subscriber",
         as: "subscribedTo",
@@ -363,15 +361,17 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
     {
       $addFields: {
         subscribersCount: {
-          $size: "$subscribers", // using dollar as now it has become a field
+          $size: "$subscribers",
         },
         channelsSubscribedToCount: {
           $size: "$subscribedTo",
         },
         isSubscribed: {
-          if: { $in: [req.user?._id, "$subscribers.subscriber"] }, // important
-          then: true,
-          else: false,
+          $cond: {
+            if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+            then: true,
+            else: false,
+          },
         },
       },
     },
@@ -392,6 +392,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   if (!channel?.length) {
     throw new ApiError(404, "channel does not exists");
   }
+
   return res
     .status(200)
     .json(
